@@ -1,0 +1,12 @@
+[package]
+name = "file-per-thread-logger"
+version = "0.1.0"
+authors = ["Benjamin Bouvier <public@benj.me>"]
+description = "A logging implementation that writes logs in one file per thread"
+license = "Apache-2.0 WITH LLVM-exception"
+repository = "https://github.com/bnjbvr/file-per-thread-logger"
+keywords = ["log", "logger", "logging", "thread"]
+
+[dependencies]
+log = "0.4.3"
+env_logger = "0.5.11"
