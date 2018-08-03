@@ -47,7 +47,7 @@ pub fn initialize(filename_prefix: &str) {
 
     let logger = FilePerThreadLogger::new(level_filter.unwrap());
     let setup_result =
-        log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(LevelFilter::Trace));
+        log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(LevelFilter::max()));
     match setup_result {
         Ok(_) => {}
         Err(_) => {
