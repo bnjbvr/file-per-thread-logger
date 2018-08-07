@@ -21,15 +21,16 @@ thread_local! {
 ///
 /// Must be called on every running thread, or else logging will panic the first time it's used.
 pub fn initialize(filename_prefix: &str) {
-    let level_filter = env::var_os("RUST_LOG").map(|val| {
-        let mut builder = Builder::new();
-        builder.parse(&val.to_str().unwrap());
-        builder.build()
-    });
-
-    if level_filter.is_none() {
+    let env_var = env::var_os("RUST_LOG");
+    if env_var.is_none() {
         return;
     }
+
+    let level_filter = {
+        let mut builder = Builder::new();
+        builder.parse(&env_var.unwrap().to_str().unwrap());
+        builder.build()
+    };
 
     // Ensure the thread local state is always properly initialized.
     WRITER.with(|rc| {
@@ -38,7 +39,7 @@ pub fn initialize(filename_prefix: &str) {
         }
     });
 
-    let logger = FilePerThreadLogger::new(level_filter.unwrap());
+    let logger = FilePerThreadLogger::new(level_filter);
     let setup_result =
         log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(LevelFilter::max()));
     match setup_result {
