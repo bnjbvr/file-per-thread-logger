@@ -8,5 +8,5 @@ repository = "https://github.com/bnjbvr/file-per-thread-logger"
 keywords = ["log", "logger", "logging", "thread"]
 
 [dependencies]
-log = "0.4.3"
-env_logger = "0.5.11"
+log = "0.4.6"
+env_logger = "0.6.0"
