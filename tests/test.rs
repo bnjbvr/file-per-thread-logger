@@ -2,12 +2,12 @@ use tempfile::tempdir;
 
 use file_per_thread_logger::initialize;
 
-use log::{ trace, debug, info, warn, error };
+use log::{debug, error, info, trace, warn};
+use std::env;
 use std::fs;
 use std::io;
 use std::path::Path;
 use std::thread;
-use std::env;
 
 fn no_log_file_exists() -> io::Result<bool> {
     let current_dir = env::current_dir()?;
@@ -47,17 +47,20 @@ fn do_log(run_init: bool) {
 
     handle.join().unwrap();
 
-    let handle = thread::Builder::new().name("helper".to_string()).spawn(move || {
-        if run_init {
-            initialize("my_log_test-");
-        }
-        trace!("This is a trace entry from a named thread.");
-        debug!("This is a debug entry from a named thread.");
-        info!("This is an info entry from a named thread.");
-        warn!("This is a warn entry from a named thread.");
-        error!("This is an error entry from a named thread.");
-        flush();
-    }).unwrap();
+    let handle = thread::Builder::new()
+        .name("helper".to_string())
+        .spawn(move || {
+            if run_init {
+                initialize("my_log_test-");
+            }
+            trace!("This is a trace entry from a named thread.");
+            debug!("This is a debug entry from a named thread.");
+            info!("This is an info entry from a named thread.");
+            warn!("This is a warn entry from a named thread.");
+            error!("This is an error entry from a named thread.");
+            flush();
+        })
+        .unwrap();
 
     handle.join().unwrap();
     flush();
@@ -91,8 +94,11 @@ fn tests() -> io::Result<()> {
     let unnamed_log = Path::new("my_log_test-ThreadId4");
 
     assert!(main_log.exists());
-    assert_eq!(fs::read_to_string(main_log)?, r#"INFO - Set up logging; filename prefix is my_log_test-
-"#);
+    assert_eq!(
+        fs::read_to_string(main_log)?,
+        r#"INFO - Set up logging; filename prefix is my_log_test-
+"#
+    );
 
     assert!(!unnamed_log.exists());
     assert!(!named_log.exists());
@@ -101,25 +107,34 @@ fn tests() -> io::Result<()> {
 
     // It then creates files for each thread with logged contents.
     assert!(main_log.exists());
-    assert_eq!(fs::read_to_string(main_log)?, r#"INFO - Set up logging; filename prefix is my_log_test-
+    assert_eq!(
+        fs::read_to_string(main_log)?,
+        r#"INFO - Set up logging; filename prefix is my_log_test-
 INFO - This is an info entry on the main thread.
 WARN - This is a warn entry on the main thread.
 ERROR - This is an error entry on the main thread.
-"#);
+"#
+    );
 
     assert!(unnamed_log.exists());
-    assert_eq!(fs::read_to_string(unnamed_log)?, r#"INFO - Set up logging; filename prefix is my_log_test-
+    assert_eq!(
+        fs::read_to_string(unnamed_log)?,
+        r#"INFO - Set up logging; filename prefix is my_log_test-
 INFO - This is an info entry from an unnamed helper thread.
 WARN - This is a warn entry from an unnamed helper thread.
 ERROR - This is an error entry from an unnamed helper thread.
-"#);
+"#
+    );
 
     assert!(named_log.exists());
-    assert_eq!(fs::read_to_string(named_log)?, r#"INFO - Set up logging; filename prefix is my_log_test-
+    assert_eq!(
+        fs::read_to_string(named_log)?,
+        r#"INFO - Set up logging; filename prefix is my_log_test-
 INFO - This is an info entry from a named thread.
 WARN - This is a warn entry from a named thread.
 ERROR - This is an error entry from a named thread.
-"#);
+"#
+    );
 
     temp_dir.close()?;
     Ok(())
