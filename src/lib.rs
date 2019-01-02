@@ -103,7 +103,8 @@ fn open_file(filename_prefix: &str) -> io::BufWriter<File> {
                 tmpstr = format!("{:?}", curthread.id());
                 tmpstr.chars()
             }
-        }.filter(|ch| ch.is_alphanumeric() || *ch == '-' || *ch == '_'),
+        }
+        .filter(|ch| ch.is_alphanumeric() || *ch == '-' || *ch == '_'),
     );
     let file = File::create(path).expect("Can't open tracing file");
     io::BufWriter::new(file)
