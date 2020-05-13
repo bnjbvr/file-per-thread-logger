@@ -3,30 +3,42 @@ use tempfile::tempdir;
 use file_per_thread_logger::initialize;
 
 use log::{debug, error, info, trace, warn};
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io;
-use std::path::Path;
 use std::thread;
 
-fn no_log_file_exists() -> io::Result<bool> {
+const LOG_PREFIX: &str = "my_log_test-";
+
+fn log_files() -> io::Result<HashSet<String>> {
+    let mut logs = HashSet::new();
     let current_dir = env::current_dir()?;
     for entry in fs::read_dir(current_dir.as_path())? {
         let path = entry?.path();
         if let Some(filename) = path.file_name() {
-            if filename.to_string_lossy().starts_with("my_log_test-") {
-                return Ok(false);
+            let filename = filename.to_string_lossy();
+            if filename.starts_with(LOG_PREFIX) {
+                logs.insert(filename[LOG_PREFIX.len()..].to_string());
             }
         }
     }
-    Ok(true)
+    Ok(logs)
+}
+
+fn read_log(name: &str) -> io::Result<String> {
+    fs::read_to_string(format!("{}{}", LOG_PREFIX, name))
+}
+
+fn set(names: &[&str]) -> HashSet<String> {
+    names.iter().map(|s| s.to_string()).collect()
 }
 
 fn flush() {
     log::logger().flush();
 }
 
-fn do_log(run_init: bool) {
+fn do_log(run_init: bool) -> thread::ThreadId {
     trace!("This is a trace entry on the main thread.");
     debug!("This is a debug entry on the main thread.");
     info!("This is an info entry on the main thread.");
@@ -35,7 +47,7 @@ fn do_log(run_init: bool) {
 
     let handle = thread::spawn(move || {
         if run_init {
-            initialize("my_log_test-");
+            initialize(LOG_PREFIX);
         }
         trace!("This is a trace entry from an unnamed helper thread.");
         debug!("This is a debug entry from an unnamed helper thread.");
@@ -45,13 +57,14 @@ fn do_log(run_init: bool) {
         flush();
     });
 
+    let unnamed_thread_id = handle.thread().id();
     handle.join().unwrap();
 
     let handle = thread::Builder::new()
         .name("helper".to_string())
         .spawn(move || {
             if run_init {
-                initialize("my_log_test-");
+                initialize(LOG_PREFIX);
             }
             trace!("This is a trace entry from a named thread.");
             debug!("This is a debug entry from a named thread.");
@@ -64,6 +77,8 @@ fn do_log(run_init: bool) {
 
     handle.join().unwrap();
     flush();
+
+    unnamed_thread_id
 }
 
 #[test]
@@ -71,64 +86,59 @@ fn tests() -> io::Result<()> {
     let temp_dir = tempdir()?;
     env::set_current_dir(&temp_dir)?;
 
-    assert!(no_log_file_exists()?);
+    assert_eq!(log_files()?, set(&[]));
 
     env::remove_var("RUST_LOG");
-    initialize("my_log_test-");
+    initialize(LOG_PREFIX);
 
     // Nothing should be logged without something in the RUST_LOG env variable..
-    assert!(no_log_file_exists()?);
+    assert_eq!(log_files()?, set(&[]));
     do_log(false);
-    assert!(no_log_file_exists()?);
+    assert_eq!(log_files()?, set(&[]));
 
     // When the RUST_LOG variable is set, it will create the main thread file even though nothing
     // has been logged yet.
     env::set_var("RUST_LOG", "info");
-    initialize("my_log_test-");
+    initialize(LOG_PREFIX);
     flush();
 
-    let main_log = Path::new("my_log_test-tests");
-    let named_log = Path::new("my_log_test-helper");
-    // do_log spawns 2 threads. This is the second time we call do_log, and we start counting from
-    // 1 (main thread). So the second unnamed thread has id = 4.
-    let unnamed_log = Path::new("my_log_test-ThreadId4");
+    let main_log = "tests";
+    let named_log = "helper";
 
-    assert!(main_log.exists());
+    assert_eq!(log_files()?, set(&[main_log]));
     assert_eq!(
-        fs::read_to_string(main_log)?,
+        read_log(main_log)?,
         r#"INFO - Set up logging; filename prefix is my_log_test-
 "#
     );
 
-    assert!(!unnamed_log.exists());
-    assert!(!named_log.exists());
-
-    do_log(true);
+    let unnamed_thread_id = do_log(true);
+    let unnamed_log = format!("{:?}", unnamed_thread_id);
+    let unnamed_log = &unnamed_log
+        .chars()
+        .filter(|ch| ch.is_alphanumeric() || *ch == '-' || *ch == '_')
+        .collect::<String>();
 
     // It then creates files for each thread with logged contents.
-    assert!(main_log.exists());
+    assert_eq!(log_files()?, set(&[main_log, named_log, unnamed_log]));
     assert_eq!(
-        fs::read_to_string(main_log)?,
+        read_log(main_log)?,
         r#"INFO - Set up logging; filename prefix is my_log_test-
 INFO - This is an info entry on the main thread.
 WARN - This is a warn entry on the main thread.
 ERROR - This is an error entry on the main thread.
 "#
     );
-
-    assert!(unnamed_log.exists());
     assert_eq!(
-        fs::read_to_string(unnamed_log)?,
+        read_log(unnamed_log)?,
         r#"INFO - Set up logging; filename prefix is my_log_test-
 INFO - This is an info entry from an unnamed helper thread.
 WARN - This is a warn entry from an unnamed helper thread.
 ERROR - This is an error entry from an unnamed helper thread.
 "#
     );
-
-    assert!(named_log.exists());
     assert_eq!(
-        fs::read_to_string(named_log)?,
+        read_log(named_log)?,
         r#"INFO - Set up logging; filename prefix is my_log_test-
 INFO - This is an info entry from a named thread.
 WARN - This is a warn entry from a named thread.
