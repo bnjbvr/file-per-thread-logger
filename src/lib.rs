@@ -15,12 +15,50 @@ thread_local! {
     static WRITER: RefCell<Option<io::BufWriter<File>>> = RefCell::new(None);
 }
 
+/// Format function to print logs in a custom format.
+pub type FormatFn = fn(&mut io::BufWriter<File>, &Record) -> io::Result<()>;
+
 /// Initializes the current process/thread with a logger, parsing the RUST_LOG environment
 /// variables to set the logging level filter and/or directives to set a filter by module name,
 /// following the usual env_logger conventions.
 ///
 /// Must be called on every running thread, or else logging will panic the first time it's used.
+/// ```
+/// use file_per_thread_logger::initialize;
+///
+/// initialize("log-file-prefix");
+/// ```
 pub fn initialize(filename_prefix: &str) {
+    init_logging(filename_prefix, None)
+}
+
+/// Initializes the current process/thread with a logger, parsing the RUST_LOG environment
+/// variables to set the logging level filter and/or directives to set a filter by module name,
+/// following the usual env_logger conventions. The format function specifies the format in which
+/// the logs will be printed.
+///
+/// Must be called on every running thread, or else logging will panic the first time it's used.
+/// ```
+/// use file_per_thread_logger::{initialize_with_formatter, FormatFn};
+/// use std::io::Write;
+///
+/// let formatter: FormatFn = |writer, record| {
+///     writeln!(
+///         writer,
+///         "{} [{}:{}] {}",
+///         record.level(),
+///         record.file().unwrap_or_default(),
+///         record.line().unwrap_or_default(),
+///         record.args()
+///     )
+/// };
+/// initialize_with_formatter("log-file-prefix", formatter);
+/// ```
+pub fn initialize_with_formatter(filename_prefix: &str, formatter: FormatFn) {
+    init_logging(filename_prefix, Some(formatter))
+}
+
+fn init_logging(filename_prefix: &str, formatter: Option<FormatFn>) {
     let env_var = env::var_os("RUST_LOG");
     if env_var.is_none() {
         return;
@@ -39,7 +77,7 @@ pub fn initialize(filename_prefix: &str) {
         }
     });
 
-    let logger = FilePerThreadLogger::new(level_filter);
+    let logger = FilePerThreadLogger::new(level_filter, formatter);
     let setup_result =
         log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(LevelFilter::max()));
     match setup_result {
@@ -54,11 +92,12 @@ pub fn initialize(filename_prefix: &str) {
 
 struct FilePerThreadLogger {
     filter: Filter,
+    formatter: Option<FormatFn>,
 }
 
 impl FilePerThreadLogger {
-    pub fn new(filter: Filter) -> Self {
-        FilePerThreadLogger { filter }
+    pub fn new(filter: Filter, formatter: Option<FormatFn>) -> Self {
+        FilePerThreadLogger { filter, formatter }
     }
 }
 
@@ -74,7 +113,11 @@ impl log::Log for FilePerThreadLogger {
                 let writer = opt_writer
                     .as_mut()
                     .expect("call the logger's initialize() function first");
-                let _ = writeln!(*writer, "{} - {}", record.level(), record.args());
+                if let Some(format_fn) = &self.formatter {
+                    let _ = format_fn(&mut *writer, record);
+                } else {
+                    let _ = writeln!(*writer, "{} - {}", record.level(), record.args());
+                }
             })
         }
     }
