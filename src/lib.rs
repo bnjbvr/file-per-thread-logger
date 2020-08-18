@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::env;
 use std::fs::File;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use env_logger::filter::{Builder, Filter};
@@ -14,6 +15,7 @@ use log::{LevelFilter, Metadata, Record};
 thread_local! {
     static WRITER: RefCell<Option<io::BufWriter<File>>> = RefCell::new(None);
 }
+static ALLOW_UNINITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Format function to print logs in a custom format.
 pub type FormatFn = fn(&mut io::BufWriter<File>, &Record) -> io::Result<()>;
@@ -56,6 +58,12 @@ pub fn initialize(filename_prefix: &str) {
 /// ```
 pub fn initialize_with_formatter(filename_prefix: &str, formatter: FormatFn) {
     init_logging(filename_prefix, Some(formatter))
+}
+
+/// Allow logs files to be created from threads in which the logger is
+/// specifically initialized.
+pub fn allow_uninitialized() {
+    ALLOW_UNINITIALIZED.store(true, Ordering::Relaxed);
 }
 
 fn init_logging(filename_prefix: &str, formatter: Option<FormatFn>) {
@@ -109,6 +117,9 @@ impl log::Log for FilePerThreadLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             WRITER.with(|rc| {
+                if rc.borrow().is_none() && ALLOW_UNINITIALIZED.load(Ordering::Relaxed) {
+                    rc.replace(Some(open_file("")));
+                }
                 let mut opt_writer = rc.borrow_mut();
                 let writer = opt_writer
                     .as_mut()
