@@ -15,6 +15,7 @@ use log::{LevelFilter, Metadata, Record};
 thread_local! {
     static WRITER: RefCell<Option<io::BufWriter<File>>> = RefCell::new(None);
 }
+
 static ALLOW_UNINITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Format function to print logs in a custom format.
@@ -60,8 +61,10 @@ pub fn initialize_with_formatter(filename_prefix: &str, formatter: FormatFn) {
     init_logging(filename_prefix, Some(formatter))
 }
 
-/// Allow logs files to be created from threads in which the logger is
-/// specifically initialized.
+/// Allow logs files to be created from threads in which the logger is specifically uninitialized.
+/// It can be useful when you don't have control on threads spawned by a dependency, for instance.
+///
+/// Should be called before calling code that spawns the new threads.
 pub fn allow_uninitialized() {
     ALLOW_UNINITIALIZED.store(true, Ordering::Relaxed);
 }
