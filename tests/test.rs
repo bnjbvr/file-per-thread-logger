@@ -1,6 +1,8 @@
 use tempfile::tempdir;
 
-use file_per_thread_logger::{initialize, initialize_with_formatter, FormatFn};
+use file_per_thread_logger::{
+    allow_uninitialized, initialize, initialize_with_formatter, FormatFn,
+};
 
 use log::{debug, error, info, trace, warn};
 use std::collections::HashSet;
@@ -11,15 +13,15 @@ use std::thread;
 
 const LOG_PREFIX: &str = "my_log_test-";
 
-fn log_files() -> io::Result<HashSet<String>> {
+fn log_files(log_prefix: &str) -> io::Result<HashSet<String>> {
     let mut logs = HashSet::new();
     let current_dir = env::current_dir()?;
     for entry in fs::read_dir(current_dir.as_path())? {
         let path = entry?.path();
         if let Some(filename) = path.file_name() {
             let filename = filename.to_string_lossy();
-            if filename.starts_with(LOG_PREFIX) {
-                logs.insert(filename[LOG_PREFIX.len()..].to_string());
+            if filename.starts_with(log_prefix) {
+                logs.insert(filename[log_prefix.len()..].to_string());
             }
         }
     }
@@ -94,15 +96,15 @@ fn tests() -> io::Result<()> {
     let temp_dir = tempdir()?;
     env::set_current_dir(&temp_dir)?;
 
-    assert_eq!(log_files()?, set(&[]));
+    assert_eq!(log_files(LOG_PREFIX)?, set(&[]));
 
     env::remove_var("RUST_LOG");
     initialize(LOG_PREFIX);
 
     // Nothing should be logged without something in the RUST_LOG env variable..
-    assert_eq!(log_files()?, set(&[]));
+    assert_eq!(log_files(LOG_PREFIX)?, set(&[]));
     do_log(false, None);
-    assert_eq!(log_files()?, set(&[]));
+    assert_eq!(log_files(LOG_PREFIX)?, set(&[]));
 
     // When the RUST_LOG variable is set, it will create the main thread file even though nothing
     // has been logged yet.
@@ -113,7 +115,7 @@ fn tests() -> io::Result<()> {
     let main_log = "tests";
     let named_log = "helper";
 
-    assert_eq!(log_files()?, set(&[main_log]));
+    assert_eq!(log_files(LOG_PREFIX)?, set(&[main_log]));
     assert_eq!(
         read_log(main_log)?,
         r#"INFO - Set up logging; filename prefix is my_log_test-
@@ -128,7 +130,10 @@ fn tests() -> io::Result<()> {
         .collect::<String>();
 
     // It then creates files for each thread with logged contents.
-    assert_eq!(log_files()?, set(&[main_log, named_log, unnamed_log]));
+    assert_eq!(
+        log_files(LOG_PREFIX)?,
+        set(&[main_log, named_log, unnamed_log])
+    );
     assert_eq!(
         read_log(main_log)?,
         r#"INFO - Set up logging; filename prefix is my_log_test-
@@ -182,7 +187,7 @@ fn formatted_logs() -> io::Result<()> {
     let main_log = "formatted_logs";
     let named_log = "helper";
 
-    assert_eq!(log_files()?, set(&[main_log]));
+    assert_eq!(log_files(LOG_PREFIX)?, set(&[main_log]));
     assert_eq!(
         read_log(main_log)?,
         r#"INFO [src/lib.rs:98] Set up logging; filename prefix is my_log_test-
@@ -197,24 +202,66 @@ fn formatted_logs() -> io::Result<()> {
         .collect::<String>();
 
     // It then creates files for each thread with logged contents.
-    assert_eq!(log_files()?, set(&[main_log, named_log, unnamed_log]));
+    assert_eq!(
+        log_files(LOG_PREFIX)?,
+        set(&[main_log, named_log, unnamed_log])
+    );
 
     assert_eq!(
         read_log(unnamed_log)?,
         r#"INFO [src/lib.rs:98] Set up logging; filename prefix is my_log_test-
-INFO [tests/test.rs:58] This is an info entry from an unnamed helper thread.
-WARN [tests/test.rs:59] This is a warn entry from an unnamed helper thread.
-ERROR [tests/test.rs:60] This is an error entry from an unnamed helper thread.
+INFO [tests/test.rs:60] This is an info entry from an unnamed helper thread.
+WARN [tests/test.rs:61] This is a warn entry from an unnamed helper thread.
+ERROR [tests/test.rs:62] This is an error entry from an unnamed helper thread.
 "#
     );
     assert_eq!(
         read_log(named_log)?,
         r#"INFO [src/lib.rs:98] Set up logging; filename prefix is my_log_test-
-INFO [tests/test.rs:79] This is an info entry from a named thread.
-WARN [tests/test.rs:80] This is a warn entry from a named thread.
-ERROR [tests/test.rs:81] This is an error entry from a named thread.
+INFO [tests/test.rs:81] This is an info entry from a named thread.
+WARN [tests/test.rs:82] This is a warn entry from a named thread.
+ERROR [tests/test.rs:83] This is an error entry from a named thread.
 "#
     );
+    temp_dir.close()?;
+    Ok(())
+}
+
+#[test]
+#[should_panic]
+fn uninitialized_threads_should_panic() {
+    let temp_dir = tempdir().expect("Cannot create tempdir");
+    env::set_current_dir(&temp_dir).expect("Couldn't set current dir");
+
+    env::set_var("RUST_LOG", "info");
+    initialize(LOG_PREFIX);
+    let handle = thread::spawn(|| {
+        log::info!("This is a log from a thread");
+    });
+    let _ = handle.join().unwrap();
+}
+
+#[test]
+fn logging_from_uninitialized_threads_allowed() -> io::Result<()> {
+    let temp_dir = tempdir()?;
+    env::set_current_dir(&temp_dir)?;
+
+    env::set_var("RUST_LOG", "info");
+    initialize("");
+    flush();
+    allow_uninitialized();
+    let handle = thread::spawn(|| {
+        log::info!("This is a log from a thread");
+    });
+    flush();
+    let unnamed_log = format!("{:?}", handle.thread().id());
+    let unnamed_log = &unnamed_log
+        .chars()
+        .filter(|ch| ch.is_alphanumeric() || *ch == '-' || *ch == '_')
+        .collect::<String>();
+    let _ = handle.join().unwrap();
+    let main_log = "logging_from_uninitialized_threads_allowed";
+    assert_eq!(log_files("")?, set(&[main_log, unnamed_log]));
     temp_dir.close()?;
     Ok(())
 }
