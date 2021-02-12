@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.14"
-env_logger = "0.8.2"
+env_logger = "0.8.3"
 
 [dev-dependencies]
 tempfile = "3.2.0"
