@@ -190,7 +190,7 @@ fn formatted_logs() -> io::Result<()> {
     assert_eq!(log_files(LOG_PREFIX)?, set(&[main_log]));
     assert_eq!(
         read_log(main_log)?,
-        r#"INFO [src/lib.rs:101] Set up logging; filename prefix is my_log_test-
+        r#"INFO [src/lib.rs:95] Set up logging; filename prefix is my_log_test-
 "#
     );
 
@@ -209,7 +209,7 @@ fn formatted_logs() -> io::Result<()> {
 
     assert_eq!(
         read_log(unnamed_log)?,
-        r#"INFO [src/lib.rs:101] Set up logging; filename prefix is my_log_test-
+        r#"INFO [src/lib.rs:95] Set up logging; filename prefix is my_log_test-
 INFO [tests/test.rs:60] This is an info entry from an unnamed helper thread.
 WARN [tests/test.rs:61] This is a warn entry from an unnamed helper thread.
 ERROR [tests/test.rs:62] This is an error entry from an unnamed helper thread.
@@ -217,7 +217,7 @@ ERROR [tests/test.rs:62] This is an error entry from an unnamed helper thread.
     );
     assert_eq!(
         read_log(named_log)?,
-        r#"INFO [src/lib.rs:101] Set up logging; filename prefix is my_log_test-
+        r#"INFO [src/lib.rs:95] Set up logging; filename prefix is my_log_test-
 INFO [tests/test.rs:81] This is an info entry from a named thread.
 WARN [tests/test.rs:82] This is a warn entry from a named thread.
 ERROR [tests/test.rs:83] This is an error entry from a named thread.

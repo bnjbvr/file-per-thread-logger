@@ -77,7 +77,7 @@ fn init_logging(filename_prefix: &str, formatter: Option<FormatFn>) {
 
     let level_filter = {
         let mut builder = Builder::new();
-        builder.parse(&env_var.unwrap().to_str().unwrap());
+        builder.parse(env_var.unwrap().to_str().unwrap());
         builder.build()
     };
 
@@ -89,14 +89,8 @@ fn init_logging(filename_prefix: &str, formatter: Option<FormatFn>) {
     });
 
     let logger = FilePerThreadLogger::new(level_filter, formatter);
-    let setup_result =
+    let _ =
         log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(LevelFilter::max()));
-    match setup_result {
-        Ok(_) => {}
-        Err(_) => {
-            // Another logger has been set up, but log can handle this.
-        }
-    }
 
     info!("Set up logging; filename prefix is {}", filename_prefix);
 }
