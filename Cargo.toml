@@ -1,6 +1,6 @@
 [package]
 name = "file-per-thread-logger"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Benjamin Bouvier <public@benj.me>"]
 description = "A logging implementation that writes logs in one file per thread"
 license = "Apache-2.0 WITH LLVM-exception"
