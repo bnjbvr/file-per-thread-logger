@@ -22,12 +22,5 @@ jobs:
     - uses: actions/checkout@v2
     - name: Build
       run: cargo build
-    # Tests should run one after the other because cargo test uses multiple threads
-    - name: Test unformatted logs
-      run: cargo test tests --verbose
-    - name: Test formatted logs
-      run: cargo test formatted_logs --verbose
-    - name: Test logs from unintialized threads
-      run: |
-        cargo test uninitialized_threads_should_panic
-        cargo test logging_from_uninitialized_threads_allowed
+    - name: Tests
+      run: ./run-tests.sh
