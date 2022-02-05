@@ -7,20 +7,38 @@ on:
     branches: [ master ]
 
 jobs:
-  lint:
+  ci:
+    env:
+        RUST_BACKTRACE: 1
     runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install rustfmt
-      run: rustup component add rustfmt
-    - name: Run rustfmt and check there's no difference
-      run: cargo fmt --all -- --check
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
 
-  build:
-    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build
-    - name: Tests
-      run: ./run-tests.sh
+      - uses: actions/checkout@v2
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all --all-features
+
+      - name: Run tests
+        run: ./run-tests.sh
