@@ -6,7 +6,9 @@ description = "A logging implementation that writes logs in one file per thread"
 license = "Apache-2.0 WITH LLVM-exception"
 repository = "https://github.com/bnjbvr/file-per-thread-logger"
 keywords = ["log", "logger", "logging", "thread"]
-edition = "2018"
+readme = "README.md"
+edition = "2021"
+documentation = "https://docs.rs/file-per-thread-logger"
 
 [dependencies]
 log = "0.4.14"
