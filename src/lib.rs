@@ -2,7 +2,7 @@
 extern crate log;
 extern crate env_logger;
 
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::env;
 use std::fs::File;
 use std::io::{self, Write};
@@ -18,8 +18,30 @@ thread_local! {
 
 static ALLOW_UNINITIALIZED: AtomicBool = AtomicBool::new(false);
 
+/// Helper struct that can help retrieve a writer, from within a custom format function.
+///
+/// Use `GetWriter::get()` to retrieve an instance of the writer.
+pub struct GetWriter<'a> {
+    rc: &'a RefCell<Option<io::BufWriter<File>>>,
+}
+
+impl<'a> GetWriter<'a> {
+    /// Retrieves a mutable reference to the underlying buffer writer.
+    pub fn get(&self) -> RefMut<'a, io::BufWriter<File>> {
+        RefMut::map(self.rc.borrow_mut(), |maybe_buf_writer| {
+            maybe_buf_writer
+                .as_mut()
+                .expect("call the logger's initialize() function first")
+        })
+    }
+}
+
 /// Format function to print logs in a custom format.
-pub type FormatFn = fn(&mut io::BufWriter<File>, &Record) -> io::Result<()>;
+///
+/// Note: to allow for reentrant log invocations, `record.args()` must be reified before the writer
+/// has been taken with the `GetWriter` instance, otherwise double borrows runtime panics may
+/// occur.
+pub type FormatFn = fn(&GetWriter, &Record) -> io::Result<()>;
 
 /// Initializes the current process/thread with a logger, parsing the RUST_LOG environment
 /// variables to set the logging level filter and/or directives to set a filter by module name,
@@ -40,19 +62,25 @@ pub fn initialize(filename_prefix: &str) {
 /// following the usual env_logger conventions. The format function specifies the format in which
 /// the logs will be printed.
 ///
+/// To allow for recursive log invocations (a log happening in an argument to log), the format
+/// function must take care of reifying the record's argument *before* taking the reference to the
+/// writer, at the risk of causing double-borrows runtime panics otherwise.
+///
 /// Must be called on every running thread, or else logging will panic the first time it's used.
 /// ```
 /// use file_per_thread_logger::{initialize_with_formatter, FormatFn};
 /// use std::io::Write;
 ///
 /// let formatter: FormatFn = |writer, record| {
+///     // Reify arguments first, to allow for recursive log invocations.
+///     let args = format!("{}", record.args());
 ///     writeln!(
 ///         writer,
 ///         "{} [{}:{}] {}",
 ///         record.level(),
 ///         record.file().unwrap_or_default(),
 ///         record.line().unwrap_or_default(),
-///         record.args()
+///         args,
 ///     )
 /// };
 /// initialize_with_formatter("log-file-prefix", formatter);
@@ -112,22 +140,36 @@ impl log::Log for FilePerThreadLogger {
     }
 
     fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            WRITER.with(|rc| {
-                if rc.borrow().is_none() && ALLOW_UNINITIALIZED.load(Ordering::Relaxed) {
-                    rc.replace(Some(open_file("")));
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        WRITER.with(|rc| {
+            if ALLOW_UNINITIALIZED.load(Ordering::Relaxed) {
+                // Initialize the logger with a default value, if it's not done yet.
+                let mut rc = rc.borrow_mut();
+                if rc.is_none() {
+                    *rc = Some(open_file(""));
                 }
+            }
+
+            if let Some(ref format_fn) = self.formatter {
+                let get_writer = GetWriter { rc };
+                let _ = format_fn(&get_writer, record);
+            } else {
+                // A note: we reify the argument first, before taking a hold on the mutable
+                // refcell, in case reifing args will cause a reentrant log invocation. Otherwise,
+                // we'd end up with a double borrow of the refcell.
+                let args = format!("{}", record.args());
+
                 let mut opt_writer = rc.borrow_mut();
                 let writer = opt_writer
                     .as_mut()
                     .expect("call the logger's initialize() function first");
-                if let Some(format_fn) = &self.formatter {
-                    let _ = format_fn(&mut *writer, record);
-                } else {
-                    let _ = writeln!(*writer, "{} - {}", record.level(), record.args());
-                }
-            })
-        }
+
+                let _ = writeln!(*writer, "{} - {}", record.level(), args);
+            }
+        })
     }
 
     fn flush(&self) {
