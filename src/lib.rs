@@ -1,7 +1,3 @@
-#[macro_use]
-extern crate log;
-extern crate env_logger;
-
 use std::cell::RefCell;
 use std::env;
 use std::fs::File;
@@ -92,7 +88,7 @@ fn init_logging(filename_prefix: &str, formatter: Option<FormatFn>) {
     let _ =
         log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(LevelFilter::max()));
 
-    info!("Set up logging; filename prefix is {}", filename_prefix);
+    log::info!("Set up logging; filename prefix is {}", filename_prefix);
 }
 
 struct FilePerThreadLogger {
