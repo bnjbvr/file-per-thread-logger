@@ -13,9 +13,11 @@ use std::thread;
 
 const LOG_PREFIX: &str = "my_log_test-";
 
+/// Returns the names of the log files found in the current directory.
 fn log_files(log_prefix: &str) -> io::Result<HashSet<String>> {
-    let mut logs = HashSet::new();
     let current_dir = env::current_dir()?;
+
+    let mut logs = HashSet::new();
     for entry in fs::read_dir(current_dir.as_path())? {
         let path = entry?.path();
         if let Some(filename) = path.file_name() {
@@ -25,6 +27,7 @@ fn log_files(log_prefix: &str) -> io::Result<HashSet<String>> {
             }
         }
     }
+
     Ok(logs)
 }
 
@@ -167,14 +170,16 @@ ERROR - This is an error entry from a named thread.
 fn formatted_logs() -> io::Result<()> {
     let temp_dir = tempdir()?;
     env::set_current_dir(&temp_dir)?;
-    let formatter: FormatFn = |writer, record| {
+    let formatter: FormatFn = |get_writer, record| {
+        let args = format!("{}", record.args());
+        let mut writer = get_writer.get();
         writeln!(
             writer,
             "{} [{}:{}] {}",
             record.level(),
             record.file().unwrap_or_default(),
             record.line().unwrap_or_default(),
-            record.args()
+            args
         )
     };
 
@@ -190,7 +195,7 @@ fn formatted_logs() -> io::Result<()> {
     assert_eq!(log_files(LOG_PREFIX)?, set(&[main_log]));
     assert_eq!(
         read_log(main_log)?,
-        r#"INFO [src/lib.rs:91] Set up logging; filename prefix is my_log_test-
+        r#"INFO [src/lib.rs:119] Set up logging; filename prefix is my_log_test-
 "#
     );
 
@@ -209,18 +214,18 @@ fn formatted_logs() -> io::Result<()> {
 
     assert_eq!(
         read_log(unnamed_log)?,
-        r#"INFO [src/lib.rs:91] Set up logging; filename prefix is my_log_test-
-INFO [tests/test.rs:60] This is an info entry from an unnamed helper thread.
-WARN [tests/test.rs:61] This is a warn entry from an unnamed helper thread.
-ERROR [tests/test.rs:62] This is an error entry from an unnamed helper thread.
+        r#"INFO [src/lib.rs:119] Set up logging; filename prefix is my_log_test-
+INFO [tests/test.rs:63] This is an info entry from an unnamed helper thread.
+WARN [tests/test.rs:64] This is a warn entry from an unnamed helper thread.
+ERROR [tests/test.rs:65] This is an error entry from an unnamed helper thread.
 "#
     );
     assert_eq!(
         read_log(named_log)?,
-        r#"INFO [src/lib.rs:91] Set up logging; filename prefix is my_log_test-
-INFO [tests/test.rs:81] This is an info entry from a named thread.
-WARN [tests/test.rs:82] This is a warn entry from a named thread.
-ERROR [tests/test.rs:83] This is an error entry from a named thread.
+        r#"INFO [src/lib.rs:119] Set up logging; filename prefix is my_log_test-
+INFO [tests/test.rs:84] This is an info entry from a named thread.
+WARN [tests/test.rs:85] This is a warn entry from a named thread.
+ERROR [tests/test.rs:86] This is an error entry from a named thread.
 "#
     );
     temp_dir.close()?;
@@ -262,6 +267,57 @@ fn logging_from_uninitialized_threads_allowed() -> io::Result<()> {
     let _ = handle.join().unwrap();
     let main_log = "logging_from_uninitialized_threads_allowed";
     assert_eq!(log_files("")?, set(&[main_log, unnamed_log]));
+    temp_dir.close()?;
+    Ok(())
+}
+
+#[test]
+fn log_in_log() -> io::Result<()> {
+    let temp_dir = tempdir()?;
+    env::set_current_dir(&temp_dir)?;
+
+    env::set_var("RUST_LOG", "trace");
+    initialize("");
+    flush();
+
+    struct Display;
+
+    impl std::fmt::Display for Display {
+        fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            log::info!("log 2");
+            Ok(())
+        }
+    }
+
+    let handle = thread::spawn(|| {
+        initialize("");
+
+        log::trace!("log 1");
+        let display = Display;
+        log::warn!("log 3{display}");
+    });
+    flush();
+
+    let unnamed_thread_id = handle.thread().id();
+    let unnamed_log = format!("{unnamed_thread_id:?}");
+    let unnamed_log = &unnamed_log
+        .chars()
+        .filter(|ch| ch.is_alphanumeric() || *ch == '-' || *ch == '_')
+        .collect::<String>();
+
+    let _ = handle.join().unwrap();
+
+    assert_eq!(log_files("")?, set(&["log_in_log", unnamed_log]));
+
+    assert_eq!(
+        fs::read_to_string(unnamed_log)?,
+        r#"INFO - Set up logging; filename prefix is 
+TRACE - log 1
+INFO - log 2
+WARN - log 3
+"#
+    );
+
     temp_dir.close()?;
     Ok(())
 }
