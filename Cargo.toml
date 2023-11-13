@@ -12,7 +12,7 @@ documentation = "https://docs.rs/file-per-thread-logger"
 
 [dependencies]
 log = "0.4.20"
-env_logger = "0.10.0"
+env_logger = "0.10.1"
 
 [dev-dependencies]
 tempfile = "3.8.1"
