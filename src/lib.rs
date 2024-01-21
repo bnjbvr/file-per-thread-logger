@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use env_logger::filter::{Builder, Filter};
+use env_logger::{Builder, Logger};
 use log::{LevelFilter, Metadata, Record};
 
 thread_local! {
@@ -99,9 +99,9 @@ fn init_logging(filename_prefix: &str, formatter: Option<FormatFn>) {
         return;
     }
 
-    let level_filter = {
+    let logger = {
         let mut builder = Builder::new();
-        builder.parse(env_var.unwrap().to_str().unwrap());
+        builder.parse_filters(env_var.unwrap().to_str().unwrap());
         builder.build()
     };
 
@@ -112,7 +112,7 @@ fn init_logging(filename_prefix: &str, formatter: Option<FormatFn>) {
         }
     });
 
-    let logger = FilePerThreadLogger::new(level_filter, formatter);
+    let logger = FilePerThreadLogger::new(logger, formatter);
     let _ =
         log::set_boxed_logger(Box::new(logger)).map(|()| log::set_max_level(LevelFilter::max()));
 
@@ -120,19 +120,19 @@ fn init_logging(filename_prefix: &str, formatter: Option<FormatFn>) {
 }
 
 struct FilePerThreadLogger {
-    filter: Filter,
+    logger: Logger,
     formatter: Option<FormatFn>,
 }
 
 impl FilePerThreadLogger {
-    pub fn new(filter: Filter, formatter: Option<FormatFn>) -> Self {
-        FilePerThreadLogger { filter, formatter }
+    pub fn new(logger: Logger, formatter: Option<FormatFn>) -> Self {
+        FilePerThreadLogger { logger, formatter }
     }
 }
 
 impl log::Log for FilePerThreadLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        self.filter.enabled(metadata)
+        self.logger.enabled(metadata)
     }
 
     fn log(&self, record: &Record) {
