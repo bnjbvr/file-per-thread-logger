@@ -15,4 +15,4 @@ log = "0.4.21"
 env_filter = "0.1.0"
 
 [dev-dependencies]
-tempfile = "3.10.0"
+tempfile = "3.10.1"
