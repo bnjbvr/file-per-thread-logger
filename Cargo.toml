@@ -11,7 +11,7 @@ edition = "2021"
 documentation = "https://docs.rs/file-per-thread-logger"
 
 [dependencies]
-log = "0.4.31"
+log = "0.4.32"
 env_filter = "1.0.1"
 
 [dev-dependencies]
